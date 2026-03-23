@@ -9,9 +9,11 @@ const CHANNEL_ID = process.env.CHANNEL_ID;
 
 // Расписание по московскому времени
 const schedule = [
-  // Пати
-  { name: 'Пати', days: [1, 2, 3, 4], hour: 18, minute: 0 }, // ПН-ЧТ
-  { name: 'Пати', days: [5, 6, 0], hour: 13, minute: 0 },    // ПТ-ВС
+  // Пати: ПН-ЧТ — 18:00
+  { name: 'Пати', days: [1, 2, 3, 4], hour: 18, minute: 0 },
+
+  // Пати: ПТ-ВС — 13:00
+  { name: 'Пати', days: [5, 6, 0], hour: 13, minute: 0 },
 
   // Среда
   { name: 'Арена', days: [3], hour: 18, minute: 30 },
@@ -29,7 +31,7 @@ function getMoscowNow() {
   return new Date(utc + 3 * 60 * 60 * 1000);
 }
 
-// Получить дату события в UTC, если расписание задано по МСК
+// Получаем дату события в UTC, если расписание указано по МСК
 function getEventDateUTC(dayOfWeek, hour, minute) {
   const nowMsk = getMoscowNow();
   const currentDay = nowMsk.getDay();
@@ -41,12 +43,12 @@ function getEventDateUTC(dayOfWeek, hour, minute) {
   eventMsk.setDate(nowMsk.getDate() + diff);
   eventMsk.setHours(hour, minute, 0, 0);
 
-  // Если событие уже прошло сегодня — переносим на следующую неделю
+  // Если событие уже прошло сегодня, переносим на следующую неделю
   if (diff === 0 && eventMsk <= nowMsk) {
     eventMsk.setDate(eventMsk.getDate() + 7);
   }
 
-  // Переводим из МСК в UTC
+  // Перевод из МСК в UTC
   return new Date(eventMsk.getTime() - 3 * 60 * 60 * 1000);
 }
 
@@ -70,16 +72,19 @@ function getUpcomingEvents() {
 }
 
 function formatMskTime(hour, minute) {
-  return ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} МСК;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} МСК`;
 }
 
-// Чтобы не отправлять одинаковые сообщения несколько раз
+// Чтобы не отправлять одно и то же сообщение много раз
 const sentNotifications = new Set();
 
 async function checkEvents() {
   try {
     const channel = await client.channels.fetch(CHANNEL_ID);
-    if (!channel) return;
+    if (!channel) {
+      console.log('Канал не найден. Проверь CHANNEL_ID');
+      return;
+    }
 
     const now = new Date();
     const upcomingEvents = getUpcomingEvents();
@@ -90,32 +95,36 @@ async function checkEvents() {
       const unix = Math.floor(event.date.getTime() / 1000);
 
       const mskTime = formatMskTime(event.hour, event.minute);
-      const localDiscordTime = <t:${unix}:t>;
+      const localDiscordTime = `<t:${unix}:t>`;
 
-      const eventKey30 = ${event.name}-${unix}-30;
-      const eventKey0 = ${event.name}-${unix}-0;
+      const key30 = `${event.name}-${unix}-30`;
+      const key0 = `${event.name}-${unix}-0`;
 
-      // За 30 минут
-      if (minutesLeft === 30 && !sentNotifications.has(eventKey30)) {
+      // Уведомление за 30 минут
+      if (minutesLeft === 30 && !sentNotifications.has(key30)) {
         await channel.send(
-          @everyone Через 30 минут начнётся **${event.name}**!\n +
-          Время: **${mskTime}** (${localDiscordTime})
+          `@everyone Через 30 минут начнётся **${event.name}**!\n` +
+          `Время: **${mskTime}** (${localDiscordTime})`
         );
-        sentNotifications.add(eventKey30);
+        sentNotifications.add(key30);
+        console.log(`Отправлено уведомление за 30 минут: ${event.name}`);
       }
 
-      // В момент начала
-      if (minutesLeft === 0 && !sentNotifications.has(eventKey0)) {
+      // Уведомление в момент начала
+      if (minutesLeft === 0 && !sentNotifications.has(key0)) {
         await channel.send(
-          @everyone Начинается **${event.name}**!\n +
-          Время: **${mskTime}** (${localDiscordTime})
+          `@everyone Начинается **${event.name}**!\n` +
+          `Время: **${mskTime}** (${localDiscordTime})`
         );
-        sentNotifications.add(eventKey0);
+        sentNotifications.add(key0);
+        console.log(`Отправлено уведомление о начале: ${event.name}`);
       }
     }
 
+    // Иногда очищаем память от старых ключей
     if (sentNotifications.size > 1000) {
       sentNotifications.clear();
+      console.log('Список отправленных уведомлений очищен');
     }
   } catch (error) {
     console.error('Ошибка в checkEvents:', error);
